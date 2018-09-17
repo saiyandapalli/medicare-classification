@@ -1,0 +1,115 @@
+---
+title: "Project 1"
+output: html_notebook
+---
+
+Here is my project.
+
+```{r}
+med <- read.csv("combinedData.csv", header = T)
+```
+
+>>>Here I read in my dataset.
+
+```{r}
+meds <- subset(med, (DRG.Definition %in% c("192 - CHRONIC OBSTRUCTIVE PULMONARY DISEASE W/O CC/MCC","293 - HEART FAILURE & SHOCK W/O CC/MCC","536 - FRACTURES OF HIP & PELVIS W/O MCC", "638 - DIABETES W CC")))
+```
+
+>>>It is also important to consider that different diagnoses are expected to have different costs - treating heartfailure is not going to cost the same as a broken leg. So in making this comparison, we will focus on thefollowing diagnoses that cover a range of different conditions that have different implications as to the hospitalstay required and the procedures necessary
+
+>>>Here I subset my dataset into those where the DRG.Definition row falls into the various categories we are focusing on.
+
+
+```{r}
+meds$PatientPays<-meds$Average.Total.Payments-meds$Average.Medicare.Payments
+meds$PctPatientPays<- meds$PatientPays / meds$Average.Total.Payments
+```
+
+>>>Here I create new variables in the data.frame that define the following: the absolute amount thepatient pays (PatientPays) and the percentage of the payment that is paid by the patient(PctPatientPays).
+
+```{r}
+meds$Urban <- factor(meds$Urban)
+meds$regions <- factor(meds$regions)
+meds$urbanByRegions <- meds$Urban:meds$regions
+levels(meds$urbanByRegions)
+table(meds$urbanByRegions)
+```
+
+>>> Here I create a factor variableurbanByRegionsin the data.frame that gives the cross ofUrbanandregions(e.g. rural, South, rural Northeast, etc.) by using the : command.
+
+```{r}
+meds <- droplevels(meds)
+```
+
+>>> Here I use drop levels to drop the levels with 0.
+
+```{r}
+summary(meds)
+```
+
+QUESTION 2
+
+>>>PatientPays is the absolute amount the patient pays. This is given by the total cost, subtracted from the medicare coverage.
+
+>>>PctPatientPays is the percentage each patient pays out of the total cost. This was made by taking the PatientPays and dividing it by the Total cost.
+
+```{r}
+library(ggplot2)
+ggplot(meds, aes(x=PatientPays)) + geom_histogram() + labs(title= "Patient Payment Histogram",
+                      y="Count", x = "Patient Payment ($)")
+```
+
+>>>Above is the histogram of Patient Payments. Though a transformation could help the histogram be more visually appealing, the information can be shown without one. A majority of Patient Payments are clustered near zero ($0 - $1500) then trickle down towards the higher range of numbers. This is an example of a right skew. 
+
+```{r}
+ggplot(meds, aes(x=PctPatientPays)) + geom_histogram() + labs(title= "Patient Payment Percent Histogram",
+                      y="Count", x = "Percentage Paid by Patient")
+```
+
+>>>Above is the histogram of Percentages paid by Patients. Though a transformation could help the histogram be more visually appealing, the information can be shown without one. The data is clearly normally distributed, with a mean of around 20%. This is an example of a slight right skew, as the precentages trickle towards the right and the median is to the right of the mean. 
+
+```{r}
+contingency<-with(meds,table(Urban,regions))
+contingency
+```
+
+>>> Above is a cross-tabulation/contingency table of Urban and regions. It is clear that theres a fewer amount of data we have on Urban regions catagorized as 1, 3, and 4, versus the other regions. Thus for a majority of the analysis we will exclude the regions corresponding to these groups.
+
+```{r}
+medical <- subset(meds, (Urban %in% c("0","2","5")))
+#SUbsetting the data into the different 4 diseases
+lung <- subset(medical, medical$DRG.Definition == "192 - CHRONIC OBSTRUCTIVE PULMONARY DISEASE W/O CC/MCC")
+heart<- subset(medical, medical$DRG.Definition == "293 - HEART FAILURE & SHOCK W/O CC/MCC")
+hip <-subset(medical, medical$DRG.Definition == "536 - FRACTURES OF HIP & PELVIS W/O MCC")
+diabetes<-subset(medical, medical$DRG.Definition == "638 - DIABETES W CC")
+```
+
+>>>Here we split up the data into the categories of each disease.
+
+```{r}
+unique(medical$urbanByRegions)
+```
+
+
+```{r}
+#Below is the code for 192 - CHRONIC OBSTRUCTIVE PULMONARY DISEASE W/O CC/MCC
+par(mfrow=c(3,4))
+for (var in unique(lung$urbanByRegions)) {
+    table <- subset(lung, medical$urbanByRegions == var)
+    hist(table$PatientPays, main = var, xlab = "Amount Paid")
+}
+title("Patient Amount Paid for Lung",line = -.7, outer = TRUE)
+
+par(mfrow=c(3,4))
+for (var in unique(lung$urbanByRegions)) {
+    table <- subset(lung, medical$urbanByRegions == var)
+    hist(table$PatientPays, main = var, xlab = "Amount Paid")
+}
+title("Patient Amount Paid for Lung",line = -.7, outer = TRUE)
+```
+
+```{r}
+
+```
+
+

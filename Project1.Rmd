@@ -1,0 +1,514 @@
+---
+title: "Project"
+author: "Sai Yandapalli"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+>>>PART 1
+
+```{r}
+#Code to read in data
+med <- read.csv("combinedData.csv", header = T)
+```
+
+Key for reference: 0: Combination Rural, Urban Area, Urban Cluster 2: Combination Rural, Urban Cluster 5: Urban Area
+
+```{r}
+#Code to subset
+meds <- subset(med, (DRG.Definition %in% c("192 - CHRONIC OBSTRUCTIVE PULMONARY DISEASE W/O CC/MCC","293 - HEART FAILURE & SHOCK W/O CC/MCC","536 - FRACTURES OF HIP & PELVIS W/O MCC", "638 - DIABETES W CC")))
+```
+
+It is also important to consider that different diagnoses are expected to have different costs - treating heartfailure is not going to cost the same as a broken leg. So in making this comparison, we will focus on thefollowing diagnoses that cover a range of different conditions that have different implications as to the hospitalstay required and the procedures necessary
+
+Here I subset my dataset into those where the DRG.Definition row falls into the various categories we are focusing on.
+
+
+```{r}
+#Code to Create Patient Pays and PctPatientPays columns
+meds$PatientPays<-meds$Average.Total.Payments-meds$Average.Medicare.Payments
+meds$PctPatientPays<- meds$PatientPays / meds$Average.Total.Payments
+```
+
+Here I create new variables in the data.frame that define the following: the absolute amount thepatient pays (PatientPays) and the percentage of the payment that is paid by the patient(PctPatientPays).
+
+```{r}
+# Create UrbanRegions column
+meds$Urban <- factor(meds$Urban)
+meds$regions <- factor(meds$regions)
+meds$urbanByRegions <- meds$Urban:meds$regions
+levels(meds$urbanByRegions)
+table(meds$urbanByRegions)
+```
+
+ Here I create a factor variableurbanByRegionsin the data.frame that gives the cross of Urbanandregions(e.g. rural, South, rural Northeast, etc.) by using the : command.
+
+```{r}
+#Drop extra levels with 0 counts
+meds <- droplevels(meds)
+```
+
+ Here I use drop levels to drop the levels with 0.
+
+```{r}
+summary(meds)
+```
+
+>>>PART 2
+
+PatientPays is the absolute amount the patient pays. This is given by the total cost, subtracted from the medicare coverage.
+
+PctPatientPays is the percentage each patient pays out of the total cost. This was made by taking the PatientPays and dividing it by the Total cost.
+
+```{r}
+library(ggplot2)
+ggplot(meds, aes(x=PatientPays)) + geom_histogram() + labs(title= "Patient Payment Histogram",
+                      y="Count", x = "Patient Payment ($)")
+```
+
+Above is the histogram of Patient Payments. Though a transformation could help the histogram be more visually appealing, the information can be shown without one.  However, its clear Patient Pays can still benefit from a log transform so we do this below. A majority of Patient Payments are clustered near zero ($0 - $1500) then trickle down towards the higher range of numbers. This is an example of a right skew. 
+
+```{r}
+ggplot(meds, aes(x=PctPatientPays)) + geom_histogram() + labs(title= "Patient Payment Percent Histogram",
+                      y="Count", x = "Percentage Paid by Patient")
+```
+
+Above is the histogram of Percentages paid by Patients. Though a transformation could help the histogram be more visually appealing, the critical information can first be shown without one.The data is primarily  normally distributed, with a mean of around 20%. This is an example of a slight right skew, as the precentages trickle towards the right and the median is to the right of the mean. 
+
+```{r}
+# Store the diagnoses in a vector
+diagnoses <- c("192 - CHRONIC OBSTRUCTIVE PULMONARY DISEASE W/O CC/MCC",
+"293 - HEART FAILURE & SHOCK W/O CC/MCC", "536 - FRACTURES OF HIP & PELVIS W/O MCC","638 - DIABETES W CC")
+# Store the diagnoses in simple language
+dia.short <- c("Lung", "Heart", "Hip",
+"Diabetes")
+
+par(mfrow = c(2, 2))
+# Perform slog transformations on PctPatientPays and graph histograms for each disease.
+for (i in 1:4) {
+  df <- meds[meds$DRG.Definition == diagnoses[i],]
+  hist(log(df$PatientPays), main = paste("PatientPays for ",
+  dia.short[i]), xlab = "log of Amount Patient Paid", breaks = 25)
+}
+```
+Log transforming the amount the patient paid, then graphing after seperating by disease, is clearly beneficial as the data appears much more normally distributed, and the trends can be visualized better.
+
+
+```{r}
+#FOr contingency table with urban and regions
+contingency<-with(meds,table(Urban,regions))
+contingency
+```
+
+```{r}
+#A visualization of the contingency table
+barplot(contingency, col = palette(), legend = TRUE, main = "All Diseases")
+```
+
+ Above is a cross-tabulation/contingency table of Urban and regions. It is clear that theres a fewer amount of data we have on Urban regions catagorized as 1, 3, and 4, versus the other regions.  It appears that the Combination of Urban values of 5, 2, and 0 have the highest numbers of combinations for all disease diagnoses. The south has notably more data entries for Combination of Rural and Urban Clusters than other regions, and more data overall. Thus for a majority of the analysis we will exclude the regions corresponding to these groups.
+
+>>>PART 3
+
+```{r}
+medical <- subset(meds, (Urban %in% c("0","2","5")))
+#SUbsetting the data into the different 4 diseases
+lung <- subset(medical, medical$DRG.Definition == "192 - CHRONIC OBSTRUCTIVE PULMONARY DISEASE W/O CC/MCC")
+heart<- subset(medical, medical$DRG.Definition == "293 - HEART FAILURE & SHOCK W/O CC/MCC")
+hip <-subset(medical, medical$DRG.Definition == "536 - FRACTURES OF HIP & PELVIS W/O MCC")
+diabetes<-subset(medical, medical$DRG.Definition == "638 - DIABETES W CC")
+```
+
+Here we split up the data into the categories of each disease. We're first just going to look at all the possible histograms, and see if we can make conclusions from those.
+
+SEE END OF PLOTS FOR ANALYSIS
+
+```{r}
+#Below is the code for 192 - CHRONIC OBSTRUCTIVE PULMONARY DISEASE W/O CC/MCC
+
+#First, we'll plot the distributions of all patient payments within the lung distribution.
+par(mfrow=c(3,4))
+for (var in unique(lung$urbanByRegions)) {
+  #This creates the table with a specific urbanBYRegions pair
+    table <- subset(lung, lung$urbanByRegions == var)
+    #This plots the histogram of Patient Payments within that Urban and Region
+    hist(table$PatientPays, main = var, xlab = "Amount Paid")
+}
+#This labels our plot
+title("Patient Amount Paid for Lung",line = -.7, outer = TRUE)
+
+#Then, we'll plot the distributions of all patient percents paid within the lung distribution.
+par(mfrow=c(3,4))
+for (var in unique(lung$urbanByRegions)) {
+  #This creates the table with a specific urbanBYRegions pair
+    table <- subset(lung, lung$urbanByRegions == var)
+    #This plots the histogram of Patient Payments within that Urban and Region
+    hist(table$PctPatientPays, main = var, xlab = "Percent Paid")
+}
+#This labels our plot
+title("Patient Percent Paid for Lung",line = -.7, outer = TRUE)
+```
+
+
+```{r}
+#Below is the code for 293 - HEART FAILURE & SHOCK W/O CC/MCC
+
+#First, we'll plot the distributions of all patient payments within the heart distribution.
+par(mfrow=c(3,4))
+for (var in unique(heart$urbanByRegions)) {
+  #This creates the table with a specific urbanBYRegions pair
+    table <- subset(heart, heart$urbanByRegions == var)
+    #This plots the histogram of Patient Payments within that Urban and Region
+    hist(table$PatientPays, main = var, xlab = "Amount Paid")
+}
+#This labels our plot
+title("Patient Amount Paid for Heart",line = -.7, outer = TRUE)
+
+#Then, we'll plot the distributions of all patient percents paid within the lung distribution.
+par(mfrow=c(3,4))
+for (var in unique(heart$urbanByRegions)) {
+  #This creates the table with a specific urbanBYRegions pair
+    table <- subset(heart, heart$urbanByRegions == var)
+    #This plots the histogram of Patient Payments within that Urban and Region
+    hist(table$PctPatientPays, main = var, xlab = "Percent Paid")
+}
+#This labels our plot
+title("Patient Percent Paid for Heart",line = -.7, outer = TRUE)
+```
+
+
+```{r}
+#Below is the code for 536 - FRACTURES OF HIP & PELVIS W/O MCC
+
+#First, we'll plot the distributions of all patient payments within the hip distribution.
+par(mfrow=c(3,4))
+for (var in unique(hip$urbanByRegions)) {
+  #This creates the table with a specific urbanBYRegions pair
+    table <- subset(hip, hip$urbanByRegions == var)
+    #This plots the histogram of Patient Payments within that Urban and Region
+    hist(table$PatientPays, main = var, xlab = "Amount Paid")
+}
+#This labels our plot
+title("Patient Amount Paid for Hip",line = -.7, outer = TRUE)
+
+#Then, we'll plot the distributions of all patient percents paid within the hip distribution.
+par(mfrow=c(3,4))
+for (var in unique(hip$urbanByRegions)) {
+  #This creates the table with a specific urbanBYRegions pair
+    table <- subset(hip, hip$urbanByRegions == var)
+    #This plots the histogram of Patient Payments within that Urban and Region
+    hist(table$PctPatientPays, main = var, xlab = "Percent Paid")
+}
+#This labels our plot
+title("Patient Percent Paid for Hip",line = -.7, outer = TRUE)
+```
+
+```{r}
+#Below is the code for 638 - DIABETES W CC
+
+#First, we'll plot the distributions of all patient payments within the diabetes distribution.
+par(mfrow=c(3,4))
+for (var in unique(diabetes$urbanByRegions)) {
+  #This creates the table with a specific urbanBYRegions pair
+    table <- subset(diabetes, diabetes$urbanByRegions == var)
+    #This plots the histogram of Patient Payments within that Urban and Region
+    hist(table$PatientPays, main = var, xlab = "Amount Paid")
+}
+#This labels our plot
+title("Patient Amount Paid for Diabetes",line = -.7, outer = TRUE)
+
+#Then, we'll plot the distributions of all patient percents paid within the diabetes distribution.
+par(mfrow=c(3,4))
+for (var in unique(diabetes$urbanByRegions)) {
+  #This creates the table with a specific urbanBYRegions pair
+    table <- subset(diabetes, diabetes$urbanByRegions == var)
+    #This plots the histogram of Patient Payments within that Urban and Region
+    hist(table$PctPatientPays, main = var, xlab = "Percent Paid")
+}
+#This labels our plot
+title("Patient Percent Paid for Diabetes",line = -.7, outer = TRUE)
+```
+
+ANALYSIS: It is important to note the above 8 Plots: 2 Plots for Each of the 4 diagnoses (One plot for visualizing the Percents paid and the other for Visualizing the Amounts Paid). Though we could have used a pairs plot, I wanted a close up visualization of the plots where we could see the quantitative values clearly for specific combinations. 
+
+It is clear that the distribution types tend to follow a similar shape for a given Urban code within each respective group. For example, the Urban Code 2 has a right skew across the board, while Urban code 5 tended to be closer to normal distributions (the right skew is not as extreme). 
+
+For 192 - CHRONIC OBSTRUCTIVE PULMONARY DISEASE W/O CC/MCC: For these plots, it is important to pay attention to the details of the distributions. For starters, a lot of the distributions for the Percent paid are close to normal, or not as skewed. Its also noteworthy to note that regions in the northeast are paying less than other regions, on average, and these distributions are closer to normal in their Percentages paid. However, Urban COde 2 is also paying less than the other Urban codes, on average. Less Urban regions paying less for hospitals, logically, does make sense. When it comes to heart failure and shock, there tends to be a higher sense of randomness because theres less data. However, we can still see how western regions have more of a right skew than other regions in the amount oaud. In addition, the northern regions tend to be closer to normally distributed. These trends can be analyzed for all the above graphs.
+
+Since it is very difficult to compare across diseases above, we'll make some box plots to summarize by diagnosis.
+
+```{r}
+# code for plotting boxplots for AMount Paid by combination 
+medical.new <- droplevels(medical)
+for (i in 1:4) {
+  table <- medical.new[medical.new$DRG.Definition == diagnoses[i],]
+  boxplot(table$PatientPays ~ table$urbanByRegions, las = 2, main = paste(dia.short[i], "Amount Paid by Patient"))
+}
+```
+
+Since the data for PatientPays is really clustered, we can also log transform the data to visualize it better.
+
+```{r}
+# code for plotting boxplots for log transformed AMount Paid by combination 
+for (i in 1:4) {
+  table <- medical.new[medical.new$DRG.Definition == diagnoses[i],]
+  boxplot(log(table$PatientPays) ~ table$urbanByRegions, las = 2, main = paste(dia.short[i], "Amount Paid by Patient"))
+}
+```
+
+The data is much more visually clear now. The Patient Paid Distributions seperated by the possible combinations for each urban:region shows how these values are generally skewed toward higher amounts, with outliers. There is a lot of spread, but the values are generally symmetric excluding the outliers!
+
+Here is the Percents.
+
+```{r}
+# code for plotting boxplots of Percent paid by combination
+for (i in 1:4) {
+  table <- medical.new[medical.new$DRG.Definition == diagnoses[i],]
+  boxplot(table$PctPatientPays ~ table$urbanByRegions, las = 2, main = paste(dia.short[i], "Percent Paid by Patient"))
+}
+```
+
+Here is a visualization of the Percents paid by disease. It's interesting to compare this with our commentary above, and how Diabetes patients pay the least.
+
+>>>PART 4
+
+```{r}
+# starting over with original dataframe
+original <- read.csv("combinedData.csv", header = TRUE)
+# adding PatientPays and PctPatientPays
+original$PatientPays <- original$Average.Total.Payments -
+original$Average.Medicare.Payments
+original$PctPatientPays <- original$PatientPays/original$Average.Total.Payments
+# only want these levels
+urbans <- c(2, 5, 0)
+medical.new <- na.omit(original[original$Urban == urbans, ])
+medical.new$urbanByRegions <- factor(medical.new$Urban):factor(medical.new$regions)
+```
+
+
+
+Now to some hypothesis testing. For our permutation tests and bootstrap confidence intervals we are assuming i.i.d. data. Permutation tests and bootstrap confidence intervals, unlike parametric tests and confidence intervals, do not require a certain (i.e. normal) distribution.
+
+```{r}
+#permutation test code from lecture
+permutation.test <- function(group1, group2, FUN, repetitions) {
+  makePermutedStats <- function() {
+    sampled <- sample(1:length(c(group1, group2)), size = length(group1), replace = FALSE)
+  return(FUN(c(group1, group2)[sampled], c(group1, group2)[-sampled]))
+  }
+  stat.obs <- FUN(group1, group2)
+  stat.permute <- replicate(repetitions, makePermutedStats())
+  p.value <- sum(stat.permute >= stat.obs)/repetitions
+  return(list(p.value = p.value, observedStat = stat.obs, permutedStats = stat.permute))
+}
+#test statistic code from permutation test from lecture
+mean.diff.abs <- function(group1, group2) {
+  return(abs(mean(group1) - mean(group2)))
+}
+#bootstrap CI code from lecture
+bootstrap.ci <- function(group1, group2, FUN, repetitions, confidence.level=.95) {
+  stat.obs <- FUN(group1, group2)
+  bootFun <- function() {
+    sampled1 <- sample(group1, size = length(group1), replace = TRUE)
+    sampled2 <- sample(group2, size = length(group2), replace = TRUE)
+    FUN(sampled1, sampled2)
+  }
+  stat.boot <- replicate(repetitions, bootFun())
+  level <- 1 - confidence.level
+  confidence.interval <- quantile(stat.boot, probs = c(level/2, 1 - level/2))
+  return(list(confidence.interval = c(lower = confidence.interval[1], estimate = stat.obs, upper = confidence.interval[2]), bootStats = stat.boot))
+}
+#test staiistic code from lecture
+mean.diff <- function(group1, group2) {
+  return(mean(group1) - mean(group2))
+}
+```
+
+
+Above I set up a majority of the functions that we will be using to do our testing. Now I'll begin our testing by applying these functions and storing the data accordingly.
+
+```{r}
+# create new arrays to keep track of test statistic, p-value, combination, and diagnosis for PatientPays and PctPatientPays
+stat_pp <- c() 
+stat_pctpp <- c()
+pv_pp <- c()
+pv_pctpp <- c()
+medcmb <- c()
+diagnosis <- c() 
+# create new vectors to keep track of confidence interval elements
+uci_pp <- c()
+lci_pp <- c()
+uci_pctpp <- c()
+lci_pctpp <- c()
+# the different Urban:region combinations 
+combos <- combn(levels(medical.new$urbanByRegions), 2)
+# iterate thru diagnosis
+for (i in 1:4) {
+# subset for diagnosis
+  df <- medical.new[medical.new$DRG.Definition == diagnoses[i],]
+for (col in 1:66) {
+# get data1 for PatientPays
+  data1_pp <- df[df$urbanByRegions == combos[1, col], "PatientPays"]
+# get data2 for PatientPays
+  data2_pp <- df[df$urbanByRegions == combos[2, col], "PatientPays"]
+# get data2 for PctPatientPays
+  data1_pctpp <- df[df$urbanByRegions == combos[1, col], "PctPatientPays"]
+# get data2 for PctPatientPays
+  data2_pctpp <- df[df$urbanByRegions == combos[2, col], "PctPatientPays"]
+# get observed test statistic for PatientPays without abs value
+  ts_pp <- mean(data1_pp) - mean(data2_pp)
+# get observed test statistic for PctPatientPays without abs value
+  ts_pctpp <- mean(data1_pctpp) - mean(data2_pctpp)
+# permutation test on PatientPays
+  pp <- permutation.test(data1_pp, data2_pp, mean.diff.abs, 2000)$p.value
+# permutation test on PctPatientPays
+  pctpp <- permutation.test(data1_pctpp, data2_pctpp, mean.diff.abs, 2000)$p.value
+# run bootstrap on PatientPays
+  ci_pp <- bootstrap.ci(data1_pp, data2_pp, mean.diff, 2000)
+# bootstrap on PctPatientPays
+  ci_pctpp <- bootstrap.ci(data1_pctpp, data2_pctpp, mean.diff, 2000)
+# append values to arrays
+  stat_pp <- c(stat_pp, ts_pp)
+  stat_pctpp <- c(stat_pctpp, ts_pctpp)
+  pv_pp <- c(pv_pp, pp)
+  pv_pctpp <- c(pv_pctpp, pctpp)
+  lci_pp <- c(lci_pp, ci_pp$confidence.interval[1])
+  uci_pp <- c(uci_pp, ci_pp$confidence.interval[3])
+  lci_pctpp <- c(lci_pctpp, ci_pctpp$confidence.interval[1])
+  uci_pctpp <- c(uci_pctpp, ci_pctpp$confidence.interval[3])
+  medcmb <- c(medcmb, paste(combos[1, col], "&", combos[2, col]))
+  diagnosis <- c(diagnosis, dia.short[i])
+}
+  }
+```
+
+```{r}
+#Store these values in a table
+medcmb_table <- data.frame(stat_pp, stat_pctpp, pv_pp, pv_pctpp, lci_pp, uci_pp, lci_pctpp, uci_pctpp, medcmb, diagnosis)
+medcmb_table
+```
+
+The above is a data frame of our p-values resulted from running our tests. We can now use this data frame to make important statment about our data.
+
+We will set a significance level at 0.05. For p-values <= 0.05, we reject the null hypothesis; There is no difference between the PatientPays/PctPatientPays in the Urban:region combination being tested. We will test the Lung first, to see how many significant p-values we get without Bonferroni correction. The first subset of the p-values dataframe shows the significant PatientPays p-values.
+
+
+```{r}
+#filter table
+app <- medcmb_table[medcmb_table$diagnosis == "Lung" & medcmb_table$pv_pp <= 0.05, ]
+app
+```
+
+And here is for PctPatientPays p-values.
+
+```{r}
+#filter table
+ap <- medcmb_table[medcmb_table$diagnosis == "Lung" & medcmb_table$pv_pctpp <= 0.05,]
+ap
+```
+
+```{r}
+# proportion of significant values PatientPays
+nrow(app)/nrow(medcmb_table[medcmb_table$diagnosis, ])
+```
+
+```{r}
+# proportion of significant values for PatientPays
+nrow(ap)/nrow(medcmb_table[medcmb_table$diagnosis, ])
+```
+
+The Lung's results have 8 PatientPays significant p-values, and 30 PctPatientPays significant p-values, which is 11%. The PatientPays data, with a 3%, is fine but the PctPatientPays has a high percentage relative to our cutoff.
+
+Let us now apply the Bonferroni Correction to try to amend this issue.
+
+```{r}
+# Outputs dataframes for each diagnosis's significant PatientPays p-values with Bonferroni Correction
+
+significant.val <- 0.05/nrow(medcmb_table[medcmb_table$diagnosis == dia.short[1],])
+print(medcmb_table[medcmb_table$diagnosis == dia.short[1] & medcmb_table$pv_pp <= significant.val,])
+
+```
+
+After running the Bonferroni Correction, its clear that there are much less significant values. This helps to correct our mistakes and reduce type 1 error.
+
+Now lets graph the P-Values for the PatientPays!
+
+```{r}
+# Plots adjusted p-values for PatientPays for each diagnosis
+for (i in 1:4) {
+  pp_df <- medcmb_table[medcmb_table$diagnosis == dia.short[i],]
+  plot(pp_df$pv_pp * nrow(pp_df), xlab = "", xaxt = "n", ylab = "PatientPays p-values",
+  main = paste(dia.short[i], "PatientPays p-values"))
+  abline(h = 0.05, lty = 2)
+  axis(1, at = 1:length(levels(pp_df$medcmb)), labels = levels(pp_df$medcmb),
+  las = 2, cex.axis = 0.5)
+}
+```
+
+Overall, there are not a lot of PatientPays significant Pvalues.
+
+Now lets graph the P-Values for the PctPatientPays!
+
+```{r}
+#For PctPatientPays p-values graph
+for (i in 1:4) {
+  df.pctpp <- medcmb_table[medcmb_table$diagnosis == dia.short[i],]
+  plot(df.pctpp$pv_pctpp * nrow(pp_df), xlab = "", xaxt = "n",
+  ylab = "PctPatientPays p-values", main = paste(dia.short[i], "PctPatientPays p-values"))
+  abline(h = 0.05, lty = 2)
+  axis(1, at = 1:length(levels(pp_df$medcmb)), labels = levels(pp_df$medcmb),
+  las = 2, cex.axis = 0.5)
+}
+```
+
+There are much more signifiant PctPatientPays than PatientPays, as expected.
+
+Now let's plot the confidence intervals to help look at the actual difference between these combinations.
+
+```{r}
+require(gplots)
+```
+
+```{r}
+# TO graph PatientPays confidence intervals
+for (i in 1:4) {
+  df <- medcmb_table[medcmb_table$diagnosis == dia.short[i], ]
+  lower <- df$lci_pp
+  upper <- df$uci_pp
+  plotCI(x = df$stat_pp, li = lower, ui = upper, xlab = "",
+  pch = 19, ylab = "Difference in PatientPays means", xaxt = "n",
+  main = paste(dia.short[i], " PatientPays Confidence Intervals"))
+  axis(1, at = 1:length(levels(df$medcmb)), labels = levels(pp_df$medcmb),
+  las = 2, cex.axis = 0.5)
+  abline(h = 0, lty = 2)
+}
+```
+
+Here we will see which confidence intervals do not contain 0. You can also clearly see the positive and negative differences within the regions. For example, for diabetes 0:midwest & 0:west have a positive difference.
+
+It is interesting to note how the bootstrapped confidence intervals yielded more significant results than the permutation test for PatientPays.
+
+Now we will do the same for PctPatientPays, to see trends in the percentages.
+
+```{r}
+# PctPatientPays confidence intervals
+par(mfrow = c(2, 2))
+for (i in 1:4) {
+  df <- medcmb_table[medcmb_table$diagnosis == dia.short[i], ]
+  lower <- df$lci_pctpp
+  upper <- df$uci_pctpp
+  plotCI(x = df$stat_pctpp, li = lower, ui = upper, xlab = "",
+  pch = 19, ylab = "Difference in PctPatientPays means",
+  xaxt = "n", main = paste(dia.short[i], " PctPatientPays Confidence Intervals"))
+  axis(1, at = 1:length(levels(df$medcmb)), labels = levels(pp_df$medcmb),
+  las = 2, cex.axis = 0.5)
+  abline(h = 0, lty = 2)
+}
+```
+
+It is important to mention some several underlying trends in the dataset. First, that the amount of significant results to analyze in the dataset were very low. In addition, most of the data points to the conclusion that urban areas paid more than other areas. This result varied, however, because the urban areas in the same region did not consistently pay more than the combination areas. In addition, certain types of region, i.e. the northeast, tended to follow a more normal trend than the other data set. There is also the chance that the low amount of significant values could be attributed to random chance of the bootstrap/permutation versus a meaningful difference. In conclusion, since there was only a tiny proportion of results that were significant, we can't conclude that there was a difference in the amount a patient pays depending on the region or urbanization the patient lives in. To bolster this statement logically, there are a lot of various extraneous factors affecting the data set and the hospital prices verus just the trends we explored.
+
+>>>PART 5
+
+Overall the analysis that I have done was fairly decent, but there was still lots of room for improvment (limited by both my statistical and programming expertise). While I was doing this project, I hesistated to decide to completely disclude the other Urban data with not enough data. Even though I felt that data was not enough to make significant statements, we can still explore the data set. In addition, I hesitated to commit to a type a test, because I knew I was inheritly taking certain assumptions about the data.There are a lot of limitations to how a patient has to pay in different parts of the counrty, particularly because the data does not take into many other factors. Such factors include legislation, politics, economy, and policies. These are all features that would boost our exploration. In addition, there are better regression techniques to explore the categorical data, which we just used simple visuals to explore.There was also not enough information given about how the data was made/conducted which is crucial to consider when analzying. I think a heatmap or pairs plot would be useful too, which I was unable to properly implement due to restrictions with the data and my own programming expertise. I also think, if time allowed, it would have been much more useful to individually test each region, each urban area, and then the combinations, and then compare the above three and make observations about the Patients. I might also ask the question of not only the diagnosis but also the various types of coverages, and possible trends in medicare in relation to zipcode. By testing only the combinations we're adding another layer of blurriness and confusion into our interpretation of the data, and increasing our chances of making false conclusions. I think, for the future, the above improvements would make for a more successful data analysis.
